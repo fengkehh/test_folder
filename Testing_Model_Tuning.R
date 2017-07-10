@@ -1,6 +1,54 @@
 library('caret')
 library('rpart')
 
+# Function to Generate n performance estimations 
+# (underlying model is hard coded to rpart)
+
+# Arguments:
+# n: number of performance estimations to be generated
+
+# FUN: function to use for performance estimation
+
+# args: a named list of arguments to be passed to FUN for performance estimation
+
+# Returns:
+# estimates: a size n vector containing the performance estimates
+generate_estimates <- function(n, FUN, args) {
+    
+    
+}
+
+
+# Function to compute performance estimation bias.
+
+# Arguments:
+# model: constructed model fit object
+
+# data.heldout: held-out data set to be used to compute real performance
+
+# args: any additional arguments to be passed to the predict function for model
+
+# estimates: vector of model performance estimates from whatever method chosen
+
+# Returns:
+# bias: the bias between estimated fitting performance and real performance
+compute_bias <- function(model, data.heldout, args, estimates) {
+    args[['newdata']] = data.heldout
+    args[['object']] = model
+    
+    pred <- do.call(predict, args = args)
+    
+    response <- all.vars(terms(testfit))[1]
+    
+    # true model fitting performance
+    true <- sum(pred == data.heldout[, response])/nrow(data.heldout)
+    
+    # compute bias
+    bias <- mean(estimates - true)
+    
+    return(bias)
+}
+
 # Tune using grid Search on a fixed set of data (and evaluate on a fixed validation set)
 rpart_grid_search <- function(formula, data.train, data.test, tuneGrid, seed = NULL) {
     resp <- all.vars(formula)[1]
