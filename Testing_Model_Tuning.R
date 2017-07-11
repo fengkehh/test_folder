@@ -5,17 +5,35 @@ library('rpart')
 # (underlying model is hard coded to rpart)
 
 # Arguments:
+# FUN: function to use for performance estimation (ie: tree_CV() or 
+# repeat_tree_CV())
+
+# formula: formula object describing relations between dependent and independent 
+# variables
+
+# data: the data to be used for performance estimation
+
+# control: tree control object
+
 # n: number of performance estimations to be generated
 
-# FUN: function to use for performance estimation
+# seed: optional random number seed for reproducibility
 
-# args: a named list of arguments to be passed to FUN for performance estimation
+# ...: arguments to be past to the performance estimation function, FUN 
+# (ie: folds)
 
 # Returns:
 # estimates: a size n vector containing the performance estimates
-generate_estimates <- function(n, FUN, args) {
+generate_estimates <- function(FUN, formula, data, control, n = 30, 
+                               seed = NULL, ...) {
     
+    estimates <- rep(0, n)
     
+    for (i in 1:n) {
+        estimates[i] <- FUN(formula, data, control, ...)    
+    }
+    
+    return(estimates)
 }
 
 
@@ -26,19 +44,17 @@ generate_estimates <- function(n, FUN, args) {
 
 # data.heldout: held-out data set to be used to compute real performance
 
-# args: any additional arguments to be passed to the predict function for model
-
 # estimates: vector of model performance estimates from whatever method chosen
+
+# ...: any additional arguments to be passed to the predict function for model
 
 # Returns:
 # bias: the bias between estimated fitting performance and real performance
-compute_bias <- function(model, data.heldout, args, estimates) {
-    args[['newdata']] = data.heldout
-    args[['object']] = model
+compute_bias <- function(model, data.heldout, estimates, ...) {
     
-    pred <- do.call(predict, args = args)
+    pred <- predict(model, data.heldout, ...)
     
-    response <- all.vars(terms(testfit))[1]
+    response <- all.vars(terms(model))[1]
     
     # true model fitting performance
     true <- sum(pred == data.heldout[, response])/nrow(data.heldout)

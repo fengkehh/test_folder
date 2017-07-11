@@ -54,11 +54,17 @@ my_repeat_CV_folds <- function(y, j = 10, k = 10, seed = NULL) {
 
 # control: control objects that contains hyper-parameters for rpart.
 
-# folds: cross validation folds. Length must be the number of rows in data.
+# folds: optional cross validation folds for reproducibility. Length must be 
+# the number of rows in data.
 
 # Returns: Model performance from each cross validation fold. Average
 # returned vector to obtain final performance estimate!
-tree_cv <- function(formula, data, control, folds) {
+tree_cv <- function(formula, data, control, folds = NULL) {
+    if (is.null(folds)) {
+        # No cv folds provided. Generate 10 irreproducible random folds.
+        response <- all.vars(formula)[1]
+        folds <- createFolds(data[, y], k = 10, list = FALSE)
+    }
     k <- max(folds)
     n <- nrow(data)
     index <- 1:n
@@ -82,7 +88,12 @@ tree_cv <- function(formula, data, control, folds) {
     return(mean(accuracies))
 }
 
-repeated_tree_CV <- function(formula, data, control, repeat_folds) {
+repeat_tree_CV <- function(formula, data, control, repeat_folds = NULL) {
+    if (is.null(repeat_folds)) {
+        # no repeat_folds provided. Generate irreproducible 10-10 repeat folds.
+        response <- all.vars(formula)[1]
+        repeat_folds <- my_repeat_CV_folds(data[, y])
+    }
     n <- ncol(repeat_folds)
     
     accuracies <- rep(0, n)
