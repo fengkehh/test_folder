@@ -49,14 +49,20 @@ my_repeat_CV_folds <- function(y, j = 10, k = 10, seed = NULL) {
 # folds: optional cross validation folds for reproducibility. Length must be 
 # the number of rows in data.
 
+# k: Only used in the case folds is not given. Indicates the number of folds to be generated.
+
 # Returns: Average model performance from all cross validation folds.
-tree_CV <- function(formula, data, control, folds = NULL) {
+tree_CV <- function(formula, data, control, folds = NULL, k = NULL) {
     if (is.null(folds)) {
-        # No cv folds provided. Generate 10 irreproducible random folds.
-        response <- all.vars(formula)[1]
-        folds <- createFolds(data[, y], k = 10, list = FALSE)
+        # No cv folds provided. Generate k random folds.
+        if (is.null(k)) {
+            stop('Missing both folds and k values!')
+        }
+        y <- all.vars(formula)[1]
+        folds <- createFolds(data[, y], k = k, list = FALSE)
+    } else {
+        k <- max(folds)
     }
-    k <- max(folds)
     n <- nrow(data)
     index <- 1:n
     accuracies <- rep(0, k)
@@ -88,18 +94,25 @@ tree_CV <- function(formula, data, control, folds = NULL) {
 
 # repeat_folds: optional repeated cross validation fold matrix for reproducibility. Number of rows must be equal to the number of rows in data. Each column must be a different but complete set of folds. ncol = j repetitions.
 
+# j: only used if repeat_folds is not given. Specify the number of repetitions.
+
+# k: only used if repeat_folds is not given. Specify the number of folds in each repetition.
+
 # Returns: Average model performance from all repetitions of cross validation estimates.
-repeat_tree_CV <- function(formula, data, control, repeat_folds = NULL) {
+repeat_tree_CV <- function(formula, data, control, repeat_folds = NULL, j = NULL, k = NULL) {
     if (is.null(repeat_folds)) {
-        # no repeat_folds provided. Generate irreproducible 10-10 repeat folds.
-        response <- all.vars(formula)[1]
-        repeat_folds <- my_repeat_CV_folds(data[, y])
+        # no repeat_folds provided. Generate repeat folds (j X k).
+        if (is.null(j) | is.null(k)) {
+            y <- all.vars(formula)[1]
+            repeat_folds <- my_repeat_CV_folds(data[, y], j = j, k = k)
+        }
+    } else {
+        j <- ncol(repeat_folds)
     }
-    n <- ncol(repeat_folds)
     
     accuracies <- rep(0, n)
     
-    for (i in 1:n) {
+    for (i in 1:j) {
         folds <- repeat_folds[,i]
         
         accuracies[i] <- tree_CV(formula, data, control, folds)
@@ -124,18 +137,22 @@ repeat_tree_CV <- function(formula, data, control, repeat_folds = NULL) {
 
 # n: number of performance estimations to be generated
 
-# ...: arguments to be past to the performance estimation function, FUN 
-# (ie: folds)
+# seed: optional random number seed for reproducibility
+
+# ...: additional parameters to be passed to the estimation function
 
 # Returns:
 # estimates: a size n vector containing the performance estimates
-n_estimates <- function(FUN, formula, data, control, n = 30, ...) {
+n_estimates <- function(FUN, formula, data, control, n = 30, seed = NULL, ...) {
     
     FUN <- match.fun(FUN)
     
     estimates <- rep(0, n)
     
     for (i in 1:n) {
+        if (!is.null(seed)) {
+            set.seed(seed + i - 1)
+        }
         estimates[i] <- FUN(formula, data, control, ...)    
     }
     
@@ -204,21 +221,22 @@ ref_model <- rpart(ref_formula, data = data.train, control = treeCon)
 
 ```{r}
 # create cv folds
-set.seed(123)
-folds_2 <- createFolds(data.train$response, k = 2, list = FALSE)
-set.seed(123)
-folds_5 <- createFolds(data.train$response, k = 5, list = FALSE)
-set.seed(123)
-folds_10 <- createFolds(data.train$response, k = 10, list = FALSE)
-set.seed(123)
-folds_loo <- createFolds(data.train$response, k = nrow(data.train), list = FALSE)
+# set.seed(123)
+# folds_2 <- createFolds(data.train$response, k = 2, list = FALSE)
+# set.seed(123)
+# folds_5 <- createFolds(data.train$response, k = 5, list = FALSE)
+# set.seed(123)
+# folds_10 <- createFolds(data.train$response, k = 10, list = FALSE)
+# set.seed(123)
+# folds_loo <- createFolds(data.train$response, k = nrow(data.train), list = FALSE)
 
 # Generate n estimates
-estimates.2fold <- n_estimates(FUN = tree_CV, response ~ inst, data = data.train, control = treeCon, n = 30, folds = folds_2)
+seed <- 1
+estimates.2fold <- n_estimates(FUN = tree_CV, response ~ inst, data = data.train, control = treeCon, n = 30, seed = NULL, k = 2)
 
-estimates.5fold <- n_estimates(FUN = tree_CV, response ~ inst, data = data.train, control = treeCon, n = 30, folds = folds_5)
+estimates.5fold <- n_estimates(FUN = tree_CV, response ~ inst, data = data.train, control = treeCon, n = 30, seed = NULL, k = 5)
 
-estimates.10fold <- n_estimates(FUN = tree_CV, response ~ inst, data = data.train, control = treeCon, n = 30, folds = folds_10)
+estimates.10fold <- n_estimates(FUN = tree_CV, response ~ inst, data = data.train, control = treeCon, n = 30, seed = NULL, k = 10)
 
 #estimates.loofold <- n_estimates(FUN = tree_CV, response ~ inst, data = data.train, control = treeCon, n = 30, folds = folds_loo)
 bias.2fold <- compute_bias(ref_model, data.test, estimates.2fold, type = 'class')
