@@ -110,7 +110,7 @@ repeat_tree_CV <- function(formula, data, control, repeat_folds = NULL, j = NULL
         j <- ncol(repeat_folds)
     }
     
-    accuracies <- rep(0, n)
+    accuracies <- rep(0, j)
     
     for (i in 1:j) {
         folds <- repeat_folds[,i]
@@ -122,6 +122,18 @@ repeat_tree_CV <- function(formula, data, control, repeat_folds = NULL, j = NULL
     
 }
 
+# Function to generate the true estimate of performance by checking model accuracy using the held out test set.
+true_estimate <- function(formula, data.train, control, data.test) {
+    set.seed(1)
+    model <- rpart(formula, data.train, control = control)
+    
+    pred <- predict(model, newdata = data.test, type = "class")
+    
+    accuracy <- sum(pred == data.test[, all.vars(formula)[1]])/nrow(data.test)
+    
+    return(accuracy)
+}
+
 # Function to generate a vector of performance estimate by repeating specified estimation technique n times.
 
 # Arguments:
@@ -131,11 +143,9 @@ repeat_tree_CV <- function(formula, data, control, repeat_folds = NULL, j = NULL
 # formula: formula object describing relations between dependent and independent 
 # variables
 
-# data: the data to be used for performance estimation
+# data.list: a list of data to be used for performance estimation. Each element is a complete data frame containing the variables specified in formula. The number of such data frames, n, is the number of performance estimations to be carried out.
 
 # control: tree control object
-
-# n: number of performance estimations to be generated
 
 # seed: optional random number seed for reproducibility
 
@@ -143,16 +153,16 @@ repeat_tree_CV <- function(formula, data, control, repeat_folds = NULL, j = NULL
 
 # Returns:
 # estimates: a size n vector containing the performance estimates
-n_estimates <- function(FUN, formula, data, control, n = 30, seed = NULL, ...) {
-    
+n_estimates <- function(FUN, formula, data.list, control, seed = NULL, ...) {
+    n <- length(data.list)
     FUN <- match.fun(FUN)
-    
     estimates <- rep(0, n)
     
+    if (!is.null(seed)) {
+            set.seed(seed)
+    }
     for (i in 1:n) {
-        if (!is.null(seed)) {
-            set.seed(seed + i - 1)
-        }
+        data <- data.list[[i]]
         estimates[i] <- FUN(formula, data, control, ...)    
     }
     
@@ -162,27 +172,15 @@ n_estimates <- function(FUN, formula, data, control, n = 30, seed = NULL, ...) {
 # Function to compute performance estimation bias.
 
 # Arguments:
-# model: constructed model fit object
+# true: a vector of the true performances (model built on n training sets and tested on the test set)
 
-# data.heldout: held-out data set to be used to compute real performance
-
-# estimates: vector of model performance estimates from whatever method chosen
-
-# ...: any additional arguments to be passed to the predict function for model
+# estimates: vector of model performance estimates from whatever method chosen, computed on the same training sets with the same order as the true estimates
 
 # Returns:
-# bias: the bias between estimated fitting performance and real performance
-compute_bias <- function(model, data.heldout, estimates, ...) {
-    
-    pred <- predict(model, data.heldout, ...)
-    
-    response <- all.vars(terms(model))[1]
-    
-    # true model fitting performance
-    true <- sum(pred == data.heldout[, response])/nrow(data.heldout)
-    
+# bias: the bias between estimated fitting performance and real performance by subtracting true values from the estimates. ie: negative means downward bias
+compute_bias <- function(true, estimates) {
     # compute bias
-    bias <- mean(estimates - true)
+    bias <- mean(estimates- true)
     
     return(bias)
 }
@@ -196,10 +194,10 @@ compute_bias <- function(model, data.heldout, estimates, ...) {
 Data generation & preparation:
 ```{r, echo = TRUE}
 set.seed(123)
-toss <- rbinom(2000, 1, 0.5)
-inst <- rnorm(2000) + toss
-volt <- rnorm(2000)
-water <- rnorm(2000)
+toss <- rbinom(40000, 1, 0.5)
+inst <- rnorm(40000) + toss
+volt <- rnorm(40000)
+water <- rnorm(40000)
 
 toss_fac <- factor(toss, labels = c("tail", "head"))
 
@@ -211,37 +209,42 @@ inTrain <- createDataPartition(data$response, p = 0.5, list = FALSE)
 data.train <- data[inTrain, ]
 data.test <- data[-inTrain, ]
 
+set.seed(1)
+partitions <- createFolds(data.train$response, k = 20, list = FALSE)
+
+data.train.list <- list()
+for (i in 1:20) {
+    data.train.list[[i]] <- data.train[partitions == i, ]
+}
+
 # Default control parameters
 treeCon = rpart.control()
 
 # Reference model (built on the entire training set)
 ref_formula <- formula('response ~ inst')
-ref_model <- rpart(ref_formula, data = data.train, control = treeCon)
+ref_estimates <- n_estimates(true_estimate, ref_formula, data.train.list, control = treeCon, seed = 123, data.test = data.test)
 ```
 
 ```{r}
-# create cv folds
-# set.seed(123)
-# folds_2 <- createFolds(data.train$response, k = 2, list = FALSE)
-# set.seed(123)
-# folds_5 <- createFolds(data.train$response, k = 5, list = FALSE)
-# set.seed(123)
-# folds_10 <- createFolds(data.train$response, k = 10, list = FALSE)
-# set.seed(123)
-# folds_loo <- createFolds(data.train$response, k = nrow(data.train), list = FALSE)
-
 # Generate n estimates
 seed <- 1
-estimates.2fold <- n_estimates(FUN = tree_CV, response ~ inst, data = data.train, control = treeCon, n = 30, seed = NULL, k = 2)
+estimates.2fold <- n_estimates(FUN = tree_CV, formula = ref_formula, data.list = data.train.list, control = treeCon, k = 2, seed = seed)
 
-estimates.5fold <- n_estimates(FUN = tree_CV, response ~ inst, data = data.train, control = treeCon, n = 30, seed = NULL, k = 5)
+estimates.5fold <- n_estimates(FUN = tree_CV, formula = ref_formula, data.list = data.train.list, control = treeCon, k = 5, seed = seed)
 
-estimates.10fold <- n_estimates(FUN = tree_CV, response ~ inst, data = data.train, control = treeCon, n = 30, seed = NULL, k = 10)
+estimates.10fold <- n_estimates(FUN = tree_CV, formula = ref_formula, data.list = data.train.list, control = treeCon, k = 10, seed = seed)
 
-#estimates.loofold <- n_estimates(FUN = tree_CV, response ~ inst, data = data.train, control = treeCon, n = 30, folds = folds_loo)
-bias.2fold <- compute_bias(ref_model, data.test, estimates.2fold, type = 'class')
-bias.5fold <- compute_bias(ref_model, data.test, estimates.5fold, type = 'class')
-bias.10fold <- compute_bias(ref_model, data.test, estimates.10fold, type = 'class')
+#estimates.nfold <- n_estimates(FUN = tree_CV, formula = ref_formula, data.list = data.train.list, control = treeCon, k = nrow(data.train.list[[1]]), seed = seed)
+
+bias.2fold <- compute_bias(ref_estimates, estimates.2fold)
+bias.5fold <- compute_bias(ref_estimates, estimates.5fold)
+bias.10fold <- compute_bias(ref_estimates, estimates.10fold)
+#bias.nfold <- compute_bias(ref_estimates, estimates.nfold)
+
+var.2fold <- var(estimates.2fold)
+var.5fold <- var(estimates.5fold)
+var.10fold <- var(estimates.10fold)
+#var.nfold <- var(estimates.nfold)
 ```
 
 # Repeated Cross Validation
